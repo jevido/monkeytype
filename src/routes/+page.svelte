@@ -544,25 +544,35 @@
 		return url.toString();
 	}
 
+	function buildShareText(url) {
+		const skullSummary = activeSkullNames.length ? activeSkullNames.join(', ') : 'None';
+		return [
+			'Monkeytype: Memory Keyboard Challenge',
+			`I scored ${wpm.toFixed(1)} WPM at ${accuracy.toFixed(1)}% accuracy.`,
+			`Mode: ${modeLabel}`,
+			`Skulls: ${skullSummary}`,
+			'Beat it kiddo:',
+			url
+		].join('\n');
+	}
+
 	async function shareResult() {
 		if (mappedCount !== ALPHABET.length) return;
 		const url = buildShareUrl();
-		const skullText = activeSkullNames.length ? ` [${activeSkullNames.join(', ')}]` : '';
-		const shareText = `I scored ${wpm.toFixed(1)} WPM (${accuracy.toFixed(1)}% accuracy) on Monkeytype Blind Layout. Can you beat it?`;
-		const fullShareText = `${shareText}${skullText}`;
+		const shareText = buildShareText(url);
 
 		try {
 			if (navigator.share) {
 				await navigator.share({
 					title: 'Monkeytype Blind Layout Challenge',
-					text: fullShareText,
+					text: shareText,
 					url
 				});
 				shareStatus = 'Challenge link shared.';
 				return;
 			}
 
-			await navigator.clipboard.writeText(`${fullShareText} ${url}`);
+			await navigator.clipboard.writeText(shareText);
 			shareStatus = 'Challenge link copied to clipboard.';
 		} catch {
 			shareStatus = 'Share failed. Please try again.';
