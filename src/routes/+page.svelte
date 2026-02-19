@@ -286,6 +286,7 @@
 		return rows;
 	});
 	const mapProgress = $derived((mappedCount / ALPHABET.length) * 100);
+	const mappingStep = $derived(Math.min(mapIndex + 1, ALPHABET.length));
 	const timeProgress = $derived((timeLeft / TEST_SECONDS) * 100);
 	const isSmallScreen = $derived(viewportWidth > 0 && viewportWidth <= 760);
 	const modeLabel = $derived(MODE_LABELS[mode] ?? 'Unknown');
@@ -878,6 +879,10 @@
 
 <svelte:window onkeydown={handleKeydown} bind:innerWidth={viewportWidth} />
 
+<svelte:head>
+	<title>Typing</title>
+</svelte:head>
+
 <main class="app-shell">
 	<header class="hero">
 		<div class="hero-top">
@@ -885,10 +890,8 @@
 			<button class="ghost dashboard-btn" onclick={goToDashboard}>Back to Dashboard</button>
 		</div>
 		<h1>Monkeytype: Memory Keyboard</h1>
-		<p>
-			Map every letter by instinct, optionally shuffle it, then survive a 30-second typing sprint on
-			your own virtual layout.
-		</p>
+		<p>So you think you can type fast huh?</p>
+		<p>Are you ready to put your money where your mouth is kiddo?</p>
 	</header>
 
 	<section class="panel">
@@ -950,10 +953,20 @@
 					Mapped <strong>{mappedCount}</strong>/26
 				</p>
 				<p class="mode-badge">Mode: {modeLabel}</p>
-				{#if phase === 'mapping'}
-					<p class="target">Map this letter: <span>{currentTarget.toUpperCase()}</span></p>
-				{/if}
 			</div>
+
+			{#if phase === 'mapping'}
+				<div class="mapping-callout" role="status" aria-live="polite">
+					<p class="mapping-step">Step {mappingStep} of 26</p>
+					<p class="mapping-title">Press the real key for:</p>
+					<p class="mapping-target-key">{currentTarget ? currentTarget.toUpperCase() : '✓'}</p>
+					<p class="mapping-subtitle">
+						Use your own keyboard memory. If this shows <strong>B</strong>, press your physical
+						<strong>B</strong> key.
+					</p>
+				</div>
+			{/if}
+
 			<div class="progress" aria-hidden="true">
 				<div class="fill map" style={`width: ${mapProgress}%`}></div>
 			</div>
@@ -963,6 +976,12 @@
 			{/if}
 			{#if challengeHint}
 				<p class="controls">{challengeHint}</p>
+			{/if}
+			{#if phase === 'mapping'}
+				<p class="mapping-legend">
+					Keyboard preview: <strong>left letter</strong> is your physical key,
+					<strong>right letter</strong> is what it maps to.
+				</p>
 			{/if}
 
 			<div class="keyboard-wrap">
@@ -1003,7 +1022,7 @@
 			{#if testHint}
 				<p class="controls">{testHint}</p>
 			{/if}
-			aaaaaaaaaaaaaaa
+
 			{#if hasSkull('fucking_geese')}
 				<div class="goose-zone">
 					{#if activeGeese.length}
@@ -1308,19 +1327,53 @@
 		color: #6f4824;
 	}
 
-	.target {
-		font-size: 1rem;
-		margin: 0;
+	.mapping-callout {
+		margin: 0.45rem 0 0.55rem;
+		padding: 0.8rem 0.9rem;
+		border-radius: 14px;
+		border: 1px solid #f0b872;
+		background: linear-gradient(150deg, #fff6ea, #ffe7c7);
 	}
 
-	.target span {
-		display: inline-block;
-		background: #1a2433;
+	.mapping-step {
+		margin: 0;
+		font-size: 0.76rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #7c4a12;
+	}
+
+	.mapping-title {
+		margin: 0.25rem 0 0.2rem;
+		font-size: 0.95rem;
+		color: #5d3810;
+	}
+
+	.mapping-target-key {
+		margin: 0;
+		font-size: clamp(2rem, 5vw, 2.7rem);
+		line-height: 1;
+		font-weight: 700;
+		letter-spacing: 0.03em;
 		color: #fff;
-		border-radius: 8px;
-		padding: 0.12rem 0.45rem;
-		min-width: 1.4rem;
+		background: #1a2433;
+		border-radius: 12px;
+		width: fit-content;
+		min-width: 2.6rem;
+		padding: 0.3rem 0.6rem 0.35rem;
 		text-align: center;
+	}
+
+	.mapping-subtitle {
+		margin: 0.45rem 0 0;
+		font-size: 0.88rem;
+		color: #6f4824;
+	}
+
+	.mapping-legend {
+		margin: 0.15rem 0 0.25rem;
+		font-size: 0.85rem;
+		color: #6f4824;
 	}
 
 	.hint {
