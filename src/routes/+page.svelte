@@ -7,9 +7,7 @@
 	const PREVIEW_ROWS = 3;
 	const PREVIEW_ROW_CHARS = 48;
 	const GOOSE_PASS_DURATION_MS = 4800;
-	const GOOSE_SPAWN_INTERVAL_MS = 1800;
-	const GOOSE_WAVE_MIN = 2;
-	const GOOSE_WAVE_MAX = 4;
+	const GOOSE_SPAWN_INTERVAL_MS = 5000;
 	const GOOSE_MAX_ACTIVE = 40;
 	const MODES = ['mapping', 'normal', 'caesarly_ambitions', 'random'];
 	const MODE_LABELS = {
@@ -577,11 +575,13 @@
 		}
 
 		const expected = canonicalPrompt[typedEntries.length] ?? '';
+		const correct = expected === char;
 		typedEntries.push({
 			expected,
 			actual: char,
-			correct: expected === char
+			correct
 		});
+		return correct;
 	}
 
 	function handleMappingKey(physicalKey) {
@@ -622,7 +622,10 @@
 		}
 
 		if (key === ' ') {
-			pushTypedChar(' ');
+			const correct = pushTypedChar(' ');
+			if (!correct && hasSkull('fucking_geese')) {
+				spawnGooseRaid(1);
+			}
 			return;
 		}
 
@@ -633,7 +636,10 @@
 			return;
 		}
 
-		pushTypedChar(mapped);
+		const correct = pushTypedChar(mapped);
+		if (!correct && hasSkull('fucking_geese')) {
+			spawnGooseRaid(1);
+		}
 	}
 
 	function stopTimer() {
@@ -761,16 +767,13 @@
 		goose.startedAt = startedAt;
 	}
 
-	function spawnGooseRaid() {
+	function spawnGooseRaid(count = 1) {
 		if (phase !== 'testing' || !testStarted) return;
 		const totalActive = activeGeese.length + queuedGeese.length;
 		if (totalActive >= GOOSE_MAX_ACTIVE) return;
 
 		const remainingSlots = GOOSE_MAX_ACTIVE - totalActive;
-		const waveSize = Math.min(
-			remainingSlots,
-			GOOSE_WAVE_MIN + Math.floor(Math.random() * (GOOSE_WAVE_MAX - GOOSE_WAVE_MIN + 1))
-		);
+		const waveSize = Math.min(remainingSlots, Math.max(0, Math.floor(count)));
 
 		for (let i = 0; i < waveSize; i += 1) {
 			const path = findPromptFlightPath();
@@ -788,7 +791,6 @@
 
 	function startGooseRaids() {
 		stopGooseRaids();
-		spawnGooseRaid();
 		gooseRaidInterval = setInterval(spawnGooseRaid, GOOSE_SPAWN_INTERVAL_MS);
 	}
 
