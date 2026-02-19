@@ -7,6 +7,10 @@
 	const PREVIEW_ROWS = 3;
 	const PREVIEW_ROW_CHARS = 48;
 	const GOOSE_PASS_DURATION_MS = 4800;
+	const GOOSE_SPAWN_INTERVAL_MS = 1800;
+	const GOOSE_WAVE_MIN = 2;
+	const GOOSE_WAVE_MAX = 4;
+	const GOOSE_MAX_ACTIVE = 40;
 	const MODES = ['mapping', 'normal', 'caesarly_ambitions', 'random'];
 	const MODE_LABELS = {
 		mapping: 'Mapping',
@@ -231,11 +235,12 @@
 	let challengeHint = $state('');
 	let shareStatus = $state('');
 	let layoutSource = $state('custom');
-	let activeGoose = $state(null);
+	let activeGeese = $state([]);
 	let timerHandle = null;
 	let testEndsAt = 0;
 	let gooseRaidInterval = null;
 	let gooseAnimationFrame = null;
+	let queuedGeese = [];
 
 	const mappedCount = $derived(Object.keys(physicalToVirtual).length);
 	const currentTarget = $derived(mapOrder[mapIndex] ?? '');
@@ -684,30 +689,45 @@
 	}
 
 	function gooseStep() {
-		if (!activeGoose) {
+		if (queuedGeese.length) {
+			activeGeese = [...activeGeese, ...queuedGeese];
+			queuedGeese = [];
+		}
+
+		if (!activeGeese.length) {
 			stopGooseAnimation();
 			return;
 		}
 
-		const elapsed = Date.now() - activeGoose.startedAt;
-		const progress = Math.min(1, elapsed / GOOSE_PASS_DURATION_MS);
-		const baseX = activeGoose.startX + (activeGoose.endX - activeGoose.startX) * progress;
-		const baseY = activeGoose.startY + (activeGoose.endY - activeGoose.startY) * progress;
-		const wobbleX =
-			Math.sin(progress * activeGoose.wobbleFreqX + activeGoose.wobblePhaseX) *
-			activeGoose.wobbleAmpX;
-		const wobbleY =
-			Math.sin(progress * activeGoose.wobbleFreqY + activeGoose.wobblePhaseY) *
-			activeGoose.wobbleAmpY;
-		const jitterX = (Math.random() - 0.5) * 1.6;
-		const jitterY = (Math.random() - 0.5) * 1.6;
-		const nextX = baseX + wobbleX + jitterX;
-		const nextY = baseY + wobbleY + jitterY;
-		activeGoose.x = Math.min(activeGoose.maxX, Math.max(activeGoose.minX, nextX));
-		activeGoose.y = Math.min(activeGoose.maxY, Math.max(activeGoose.minY, nextY));
+		const now = Date.now();
+		const nextGeese = [];
+		for (const goose of activeGeese) {
+			const elapsed = now - goose.startedAt;
+			const progress = Math.min(1, elapsed / GOOSE_PASS_DURATION_MS);
+			const baseX = goose.startX + (goose.endX - goose.startX) * progress;
+			const baseY = goose.startY + (goose.endY - goose.startY) * progress;
+			const wobbleX =
+				Math.sin(progress * goose.wobbleFreqX + goose.wobblePhaseX) * goose.wobbleAmpX;
+			const wobbleY =
+				Math.sin(progress * goose.wobbleFreqY + goose.wobblePhaseY) * goose.wobbleAmpY;
+			const jitterX = (Math.random() - 0.5) * 1.6;
+			const jitterY = (Math.random() - 0.5) * 1.6;
+			const nextX = baseX + wobbleX + jitterX;
+			const nextY = baseY + wobbleY + jitterY;
+			goose.x = Math.min(goose.maxX, Math.max(goose.minX, nextX));
+			goose.y = Math.min(goose.maxY, Math.max(goose.minY, nextY));
+			if (progress >= 1) {
+				const nextPath = findPromptFlightPath();
+				if (nextPath) {
+					retargetGoose(goose, nextPath, now);
+				}
+			}
+			nextGeese.push(goose);
+		}
+		activeGeese = queuedGeese.length ? [...nextGeese, ...queuedGeese] : nextGeese;
+		queuedGeese = [];
 
-		if (progress >= 1) {
-			activeGoose = null;
+		if (!activeGeese.length) {
 			stopGooseAnimation();
 			return;
 		}
@@ -720,50 +740,66 @@
 		gooseAnimationFrame = requestAnimationFrame(gooseStep);
 	}
 
+	function retargetGoose(goose, path, startedAt = Date.now()) {
+		goose.x = path.startX;
+		goose.y = path.startY;
+		goose.startX = path.startX;
+		goose.startY = path.startY;
+		goose.endX = path.endX;
+		goose.endY = path.endY;
+		goose.minX = path.minX;
+		goose.maxX = path.maxX;
+		goose.minY = path.minY;
+		goose.maxY = path.maxY;
+		goose.wobbleAmpX = 12 + Math.random() * 12;
+		goose.wobbleAmpY = 8 + Math.random() * 10;
+		goose.wobbleFreqX = Math.PI * 2 * (2 + Math.random() * 3);
+		goose.wobbleFreqY = Math.PI * 2 * (3 + Math.random() * 4);
+		goose.wobblePhaseX = Math.random() * Math.PI * 2;
+		goose.wobblePhaseY = Math.random() * Math.PI * 2;
+		goose.startedAt = startedAt;
+	}
+
 	function spawnGooseRaid() {
 		if (phase !== 'testing' || !testStarted) return;
+		const totalActive = activeGeese.length + queuedGeese.length;
+		if (totalActive >= GOOSE_MAX_ACTIVE) return;
 
-		if (activeGoose) {
-			return;
+		const remainingSlots = GOOSE_MAX_ACTIVE - totalActive;
+		const waveSize = Math.min(
+			remainingSlots,
+			GOOSE_WAVE_MIN + Math.floor(Math.random() * (GOOSE_WAVE_MAX - GOOSE_WAVE_MIN + 1))
+		);
+
+		for (let i = 0; i < waveSize; i += 1) {
+			const path = findPromptFlightPath();
+			if (!path) break;
+
+			const goose = {
+				id: `${Date.now()}-${Math.floor(Math.random() * 100000)}-${i}`
+			};
+			retargetGoose(goose, path);
+			queuedGeese.push(goose);
 		}
-
-		const path = findPromptFlightPath();
-		if (!path) return;
-
-		activeGoose = {
-			id: `${Date.now()}`,
-			x: path.startX,
-			y: path.startY,
-			startX: path.startX,
-			startY: path.startY,
-			endX: path.endX,
-			endY: path.endY,
-			minX: path.minX,
-			maxX: path.maxX,
-			minY: path.minY,
-			maxY: path.maxY,
-			wobbleAmpX: 12 + Math.random() * 12,
-			wobbleAmpY: 8 + Math.random() * 10,
-			wobbleFreqX: Math.PI * 2 * (2 + Math.random() * 3),
-			wobbleFreqY: Math.PI * 2 * (3 + Math.random() * 4),
-			wobblePhaseX: Math.random() * Math.PI * 2,
-			wobblePhaseY: Math.random() * Math.PI * 2,
-			startedAt: Date.now()
-		};
-		testHint = 'Goose incoming. Keep typing through the distraction.';
+		testHint = `${activeGeese.length + queuedGeese.length} geese active. Keep typing through the chaos.`;
 		startGooseAnimation();
 	}
 
 	function startGooseRaids() {
 		stopGooseRaids();
-		gooseRaidInterval = setInterval(spawnGooseRaid, 5000);
+		spawnGooseRaid();
+		gooseRaidInterval = setInterval(spawnGooseRaid, GOOSE_SPAWN_INTERVAL_MS);
 	}
 
-	function shooGoose() {
-		if (!activeGoose) return;
-		activeGoose = null;
-		stopGooseAnimation();
-		testHint = 'Goose shooed away.';
+	function shooGoose(gooseId) {
+		const countBefore = activeGeese.length;
+		activeGeese = activeGeese.filter((goose) => goose.id !== gooseId);
+		if (activeGeese.length < countBefore) {
+			testHint = 'Goose shooed away.';
+		}
+		if (!activeGeese.length) {
+			stopGooseAnimation();
+		}
 	}
 
 	function stopGooseRaids() {
@@ -772,7 +808,8 @@
 			gooseRaidInterval = null;
 		}
 		stopGooseAnimation();
-		activeGoose = null;
+		activeGeese = [];
+		queuedGeese = [];
 	}
 
 	function handleKeydown(event) {
@@ -966,10 +1003,14 @@
 			{#if testHint}
 				<p class="controls">{testHint}</p>
 			{/if}
+			aaaaaaaaaaaaaaa
 			{#if hasSkull('fucking_geese')}
 				<div class="goose-zone">
-					{#if activeGoose}
-						<p class="controls">Goose is flying over your prompt. Keep typing through it.</p>
+					{#if activeGeese.length}
+						<p class="controls">
+							{activeGeese.length} goose{activeGeese.length === 1 ? '' : 's'} flying over your prompt.
+							Keep typing through it.
+						</p>
 					{:else}
 						<p class="controls">No active goose pass.</p>
 					{/if}
@@ -997,15 +1038,17 @@
 					</div>
 				{/each}
 
-				{#if hasSkull('fucking_geese') && activeGoose}
-					<button
-						class="goose-flyer"
-						style={`left: ${activeGoose.x}px; top: ${activeGoose.y}px;`}
-						onpointerdown={shooGoose}
-						aria-label="Shoo goose"
-					>
-						🪿
-					</button>
+				{#if hasSkull('fucking_geese')}
+					{#each activeGeese as goose (goose.id)}
+						<button
+							class="goose-flyer"
+							style={`left: ${goose.x}px; top: ${goose.y}px;`}
+							onpointerdown={() => shooGoose(goose.id)}
+							aria-label="Shoo goose"
+						>
+							🪿
+						</button>
+					{/each}
 				{/if}
 			</div>
 
