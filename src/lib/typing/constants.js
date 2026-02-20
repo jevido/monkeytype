@@ -20,9 +20,14 @@ export const SKULLS = [
 		description: 'Backspace is disabled during the test.'
 	},
 	{
+		id: 'word_roulette',
+		name: 'Word Roulette',
+		description: 'Every typed space rerolls the next target word.'
+	},
+	{
 		id: 'fucking_geese',
 		name: 'Fucking Geese',
-		description: 'A goose keeps flying over your prompt text to distract you.'
+		description: 'A goose or 2 keeps flying over your text.'
 	}
 ];
 export const KEYBOARD_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];

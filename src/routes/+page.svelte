@@ -13,7 +13,8 @@
 		PREVIEW_ROWS,
 		SHARE_BASE_URL,
 		SKULLS,
-		TEST_SECONDS
+		TEST_SECONDS,
+		WORD_BANK
 	} from '$lib/typing/constants.js';
 	import {
 		buildLineStarts,
@@ -311,6 +312,28 @@
 		return correct;
 	}
 
+	function rerollUpcomingWord() {
+		const cursor = typedEntries.length;
+		let wordStart = cursor;
+
+		while (wordStart < canonicalPrompt.length && canonicalPrompt[wordStart] === ' ') {
+			wordStart += 1;
+		}
+
+		const replacement = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+		if (wordStart >= canonicalPrompt.length) {
+			canonicalPrompt = `${canonicalPrompt}${canonicalPrompt.endsWith(' ') ? '' : ' '}${replacement}`;
+			return;
+		}
+
+		let wordEnd = wordStart;
+		while (wordEnd < canonicalPrompt.length && canonicalPrompt[wordEnd] !== ' ') {
+			wordEnd += 1;
+		}
+
+		canonicalPrompt = `${canonicalPrompt.slice(0, wordStart)}${replacement}${canonicalPrompt.slice(wordEnd)}`;
+	}
+
 	function handleMappingKey(physicalKey) {
 		if (!currentTarget) return;
 		if (physicalToVirtual[physicalKey]) {
@@ -350,6 +373,9 @@
 
 		if (key === ' ') {
 			const correct = pushTypedChar(' ');
+			if (hasSkull('word_roulette')) {
+				rerollUpcomingWord();
+			}
 			if (!correct && hasSkull('fucking_geese')) {
 				spawnGooseRaid(1);
 			}
