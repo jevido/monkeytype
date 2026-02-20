@@ -1,221 +1,32 @@
 <script>
 	import { onMount } from 'svelte';
-
-	const TEST_SECONDS = 30;
-	const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('');
-	const SHARE_BASE_URL = 'https://monkeytype.jevido.nl/';
-	const PREVIEW_ROWS = 3;
-	const PREVIEW_ROW_CHARS = 48;
-	const GOOSE_PASS_DURATION_MS = 4800;
-	const GOOSE_SPAWN_INTERVAL_MS = 5000;
-	const GOOSE_MAX_ACTIVE = 40;
-	const MODES = ['mapping', 'normal', 'caesarly_ambitions', 'random'];
-	const MODE_LABELS = {
-		mapping: 'Mapping',
-		normal: 'Normal',
-		caesarly_ambitions: 'Caesarly Ambitions',
-		random: 'Random'
-	};
-	const SKULLS = [
-		{
-			id: 'no_backspace',
-			name: 'No Backspace',
-			description: 'Backspace is disabled during the test.'
-		},
-		{
-			id: 'blackout_rows',
-			name: 'Blackout Rows',
-			description: 'Only the top row stays readable while typing.'
-		},
-		{
-			id: 'fucking_geese',
-			name: 'Fucking Geese',
-			description: 'A goose keeps flying over your prompt text to distract you.'
-		}
-	];
-	const KEYBOARD_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
-	const WORD_BANK = [
-		'about',
-		'above',
-		'across',
-		'after',
-		'again',
-		'almost',
-		'alpha',
-		'anchor',
-		'apple',
-		'arrow',
-		'aware',
-		'balance',
-		'basic',
-		'beacon',
-		'become',
-		'before',
-		'better',
-		'beyond',
-		'blaze',
-		'board',
-		'bold',
-		'brain',
-		'bridge',
-		'brisk',
-		'burst',
-		'cable',
-		'calm',
-		'carry',
-		'chain',
-		'chart',
-		'check',
-		'chess',
-		'clear',
-		'climb',
-		'clock',
-		'cloud',
-		'color',
-		'crisp',
-		'curve',
-		'dance',
-		'delta',
-		'dream',
-		'drift',
-		'drive',
-		'early',
-		'earth',
-		'echo',
-		'elite',
-		'ember',
-		'energy',
-		'enjoy',
-		'enter',
-		'equal',
-		'event',
-		'extra',
-		'faith',
-		'field',
-		'final',
-		'flare',
-		'focus',
-		'frame',
-		'fresh',
-		'front',
-		'ghost',
-		'giant',
-		'glide',
-		'glow',
-		'grace',
-		'graph',
-		'great',
-		'green',
-		'guide',
-		'happy',
-		'heart',
-		'honey',
-		'human',
-		'ideal',
-		'image',
-		'input',
-		'joint',
-		'jolly',
-		'judge',
-		'kinda',
-		'known',
-		'laser',
-		'later',
-		'learn',
-		'level',
-		'light',
-		'logic',
-		'lucky',
-		'magic',
-		'mango',
-		'match',
-		'metal',
-		'might',
-		'model',
-		'motion',
-		'native',
-		'never',
-		'noble',
-		'novel',
-		'ocean',
-		'offer',
-		'omega',
-		'other',
-		'paper',
-		'party',
-		'peace',
-		'phase',
-		'pilot',
-		'pixel',
-		'plane',
-		'power',
-		'prime',
-		'quick',
-		'quiet',
-		'radio',
-		'range',
-		'rapid',
-		'ready',
-		'rebel',
-		'right',
-		'river',
-		'robot',
-		'round',
-		'scale',
-		'scope',
-		'score',
-		'secret',
-		'sense',
-		'shape',
-		'shift',
-		'shine',
-		'short',
-		'signal',
-		'silver',
-		'smart',
-		'solid',
-		'spark',
-		'speed',
-		'spice',
-		'spirit',
-		'start',
-		'stone',
-		'storm',
-		'story',
-		'strong',
-		'sunny',
-		'super',
-		'switch',
-		'symbol',
-		'table',
-		'taste',
-		'teacher',
-		'tensor',
-		'theme',
-		'tiger',
-		'timing',
-		'today',
-		'token',
-		'total',
-		'touch',
-		'tower',
-		'track',
-		'travel',
-		'unique',
-		'upper',
-		'urban',
-		'valid',
-		'value',
-		'video',
-		'vivid',
-		'voice',
-		'water',
-		'whale',
-		'whole',
-		'world',
-		'youth',
-		'zebra'
-	];
+	import KeyboardMap from '$lib/components/KeyboardMap.svelte';
+	import {
+		ALPHABET,
+		GOOSE_MAX_ACTIVE,
+		GOOSE_PASS_DURATION_MS,
+		GOOSE_SPAWN_INTERVAL_MS,
+		KEYBOARD_ROWS,
+		MODE_LABELS,
+		MODES,
+		PREVIEW_ROW_CHARS,
+		PREVIEW_ROWS,
+		SHARE_BASE_URL,
+		SKULLS,
+		TEST_SECONDS
+	} from '$lib/typing/constants.js';
+	import {
+		buildLineStarts,
+		createCaesarShiftMapping,
+		createIdentityMapping,
+		createRandomMapping,
+		encodeForDisplay,
+		generatePrompt,
+		isValidLayoutCode,
+		layoutCodeFromMapping,
+		mappingFromCode,
+		randomize
+	} from '$lib/typing/layout.js';
 
 	let phase = $state('intro');
 	let mode = $state('mapping');
@@ -255,7 +66,7 @@
 		}
 		return reverse;
 	});
-	const displayPrompt = $derived(encodeForDisplay(canonicalPrompt));
+	const displayPrompt = $derived(encodeForDisplay(canonicalPrompt, virtualToPhysical));
 	const lineStarts = $derived(buildLineStarts(displayPrompt, PREVIEW_ROW_CHARS));
 	const activeLineIndex = $derived.by(() => {
 		let index = 0;
@@ -296,105 +107,11 @@
 		return selectedSkulls.includes(id);
 	}
 
-	function randomize(items) {
-		const clone = [...items];
-		for (let i = clone.length - 1; i > 0; i -= 1) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[clone[i], clone[j]] = [clone[j], clone[i]];
-		}
-		return clone;
-	}
-
-	function generatePrompt(wordCount = 220) {
-		const words = Array.from({ length: wordCount }, () => {
-			const index = Math.floor(Math.random() * WORD_BANK.length);
-			return WORD_BANK[index];
-		});
-		return words.join(' ');
-	}
-
-	function buildLineStarts(text, maxChars) {
-		const starts = [0];
-		if (!text.length) return starts;
-
-		let start = 0;
-		while (start < text.length) {
-			let end = Math.min(start + maxChars, text.length);
-			if (end < text.length) {
-				const softBreak = text.lastIndexOf(' ', end);
-				if (softBreak > start + 16) {
-					end = softBreak + 1;
-				}
-			}
-			if (end <= start) end = Math.min(start + maxChars, text.length);
-			start = end;
-			starts.push(start);
-		}
-
-		return starts;
-	}
-
-	function encodeForDisplay(text) {
-		let output = '';
-		for (const char of text) {
-			if (char === ' ') {
-				output += ' ';
-				continue;
-			}
-			output += virtualToPhysical[char] ?? '?';
-		}
-		return output;
-	}
-
 	function resetRound() {
 		timeLeft = TEST_SECONDS;
 		testStarted = false;
 		typedEntries = [];
 		canonicalPrompt = generatePrompt();
-	}
-
-	function isValidLayoutCode(code) {
-		if (!code || code.length !== ALPHABET.length) return false;
-		const chars = code.split('');
-		if (chars.some((char) => !ALPHABET.includes(char))) return false;
-		return new Set(chars).size === ALPHABET.length;
-	}
-
-	function mappingFromCode(code) {
-		const nextMap = {};
-		for (let i = 0; i < ALPHABET.length; i += 1) {
-			nextMap[ALPHABET[i]] = code[i];
-		}
-		return nextMap;
-	}
-
-	function layoutCodeFromMapping() {
-		return ALPHABET.map((key) => physicalToVirtual[key]).join('');
-	}
-
-	function createIdentityMapping() {
-		const nextMap = {};
-		for (const key of ALPHABET) {
-			nextMap[key] = key;
-		}
-		return nextMap;
-	}
-
-	function createRandomMapping() {
-		const shuffledLetters = randomize(ALPHABET);
-		const nextMap = {};
-		for (let i = 0; i < ALPHABET.length; i += 1) {
-			nextMap[ALPHABET[i]] = shuffledLetters[i];
-		}
-		return nextMap;
-	}
-
-	function createCaesarShiftMapping(shift = 3) {
-		const nextMap = {};
-		for (let i = 0; i < ALPHABET.length; i += 1) {
-			nextMap[ALPHABET[i]] = ALPHABET[(i + shift) % ALPHABET.length];
-		}
-		return nextMap;
 	}
 
 	function startMapping() {
@@ -534,7 +251,7 @@
 
 	function buildShareUrl() {
 		const url = new URL(SHARE_BASE_URL);
-		url.searchParams.set('layout', layoutCodeFromMapping());
+		url.searchParams.set('layout', layoutCodeFromMapping(physicalToVirtual));
 		url.searchParams.set('mode', mode);
 		if (selectedSkulls.length) {
 			url.searchParams.set('skulls', selectedSkulls.join(','));
@@ -997,19 +714,7 @@
 			{/if}
 
 			<div class="keyboard-wrap">
-				<div class="keyboard">
-					{#each KEYBOARD_ROWS as row (row)}
-						<div class="key-row">
-							{#each row.split('') as physical (physical)}
-								<div class={['keycap', physicalToVirtual[physical] ? 'mapped' : 'empty']}>
-									<span class="physical">{physical.toUpperCase()}</span>
-									<span class="arrow">→</span>
-									<span class="virtual">{(physicalToVirtual[physical] ?? '_').toUpperCase()}</span>
-								</div>
-							{/each}
-						</div>
-					{/each}
-				</div>
+				<KeyboardMap rows={KEYBOARD_ROWS} mapping={physicalToVirtual} />
 			</div>
 
 			{#if phase === 'ready'}
@@ -1050,11 +755,9 @@
 
 			<div class="prompt" aria-label="typing prompt">
 				{#each promptRows as row (row.id)}
-					{@const obscured = hasSkull('blackout_rows') && !row.active}
-					<div class={['prompt-row', row.active && 'active', obscured && 'obscured']}>
+					<div class={['prompt-row', row.active && 'active']}>
 						{#each row.text.split('') as char, offset (row.start + offset)}
 							{@const i = row.start + offset}
-							{@const displayChar = obscured && char !== ' ' ? '•' : char}
 							<span
 								class={[
 									'char',
@@ -1063,7 +766,7 @@
 									i === typedCount && 'current'
 								]}
 							>
-								{displayChar}
+								{char}
 							</span>
 						{/each}
 					</div>
@@ -1085,23 +788,7 @@
 
 			<div class="test-keyboard-wrap" aria-label="virtual keyboard">
 				<div class="test-keyboard">
-					{#each KEYBOARD_ROWS as row (row)}
-						<div class="key-row">
-							{#each row.split('') as physical (physical)}
-								<div
-									class={[
-										'keycap',
-										'test-keycap',
-										physicalToVirtual[physical] ? 'mapped' : 'empty'
-									]}
-								>
-									<span class="physical">{physical.toUpperCase()}</span>
-									<span class="arrow">→</span>
-									<span class="virtual">{(physicalToVirtual[physical] ?? '_').toUpperCase()}</span>
-								</div>
-							{/each}
-						</div>
-					{/each}
+					<KeyboardMap rows={KEYBOARD_ROWS} mapping={physicalToVirtual} keycapClass="test-keycap" />
 				</div>
 			</div>
 
@@ -1424,52 +1111,6 @@
 		padding-bottom: 0.25rem;
 	}
 
-	.keyboard {
-		display: grid;
-		gap: 0.5rem;
-		margin-top: 0.85rem;
-		min-width: max-content;
-	}
-
-	.key-row {
-		display: flex;
-		justify-content: center;
-		flex-wrap: nowrap;
-		gap: 0.35rem;
-	}
-
-	.keycap {
-		width: 64px;
-		border: 1px solid #d8dde6;
-		border-radius: 10px;
-		padding: 0.35rem;
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
-		align-items: center;
-		row-gap: 0.15rem;
-		background: #f6f8fb;
-	}
-
-	.keycap.empty {
-		opacity: 0.72;
-	}
-
-	.keycap.mapped {
-		border-color: #ffaf40;
-		background: #fff5e8;
-	}
-
-	.physical,
-	.virtual {
-		font-weight: 700;
-		text-align: center;
-	}
-
-	.arrow {
-		text-align: center;
-		color: #8c98a8;
-	}
-
 	.actions {
 		display: flex;
 		gap: 0.7rem;
@@ -1525,17 +1166,6 @@
 		color: #69727d;
 	}
 
-	.prompt-row.obscured {
-		color: #3e444d;
-		opacity: 0.22;
-		filter: blur(2.4px);
-	}
-
-	.prompt-row.obscured .char {
-		color: #4a5058 !important;
-		border-bottom-color: transparent !important;
-	}
-
 	.char.ok {
 		color: #c6ccd4;
 	}
@@ -1574,11 +1204,6 @@
 		display: grid;
 		gap: 0.42rem;
 		min-width: max-content;
-	}
-
-	.test-keycap {
-		background: #f4f7fb;
-		border-color: #d1dae6;
 	}
 
 	.goose-flyer {
@@ -1637,12 +1262,6 @@
 
 		.panel {
 			padding: 0.85rem;
-		}
-
-		.keycap {
-			width: 50px;
-			font-size: 0.74rem;
-			padding: 0.28rem;
 		}
 
 		.prompt {
