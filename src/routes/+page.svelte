@@ -1,14 +1,9 @@
 <script>
 	import { onMount } from 'svelte';
-	import KeyboardMap from '$lib/components/KeyboardMap.svelte';
 	import {
-		ALPHABET,
 		GOOSE_MAX_ACTIVE,
 		GOOSE_PASS_DURATION_MS,
 		GOOSE_SPAWN_INTERVAL_MS,
-		KEYBOARD_ROWS,
-		MODE_LABELS,
-		MODES,
 		PREVIEW_ROW_CHARS,
 		PREVIEW_ROWS,
 		SHARE_BASE_URL,
@@ -16,27 +11,11 @@
 		TEST_SECONDS,
 		WORD_BANK
 	} from '$lib/typing/constants.js';
-	import {
-		buildLineStarts,
-		createCaesarShiftMapping,
-		createIdentityMapping,
-		createRandomMapping,
-		encodeForDisplay,
-		generatePrompt,
-		isValidLayoutCode,
-		layoutCodeFromMapping,
-		mappingFromCode,
-		randomize
-	} from '$lib/typing/layout.js';
+	import { buildLineStarts, generatePrompt } from '$lib/typing/layout.js';
 
 	let phase = $state('intro');
-	let mode = $state('mapping');
 	let selectedSkulls = $state([]);
 	let viewportWidth = $state(0);
-	let mapOrder = $state([]);
-	let mapIndex = $state(0);
-	let mappingHint = $state('');
-	let physicalToVirtual = $state({});
 	let timeLeft = $state(TEST_SECONDS);
 	let testStarted = $state(false);
 	let canonicalPrompt = $state('');
@@ -44,30 +23,22 @@
 	let testHint = $state('');
 	let challengeHint = $state('');
 	let shareStatus = $state('');
-	let layoutSource = $state('custom');
 	let activeGeese = $state([]);
 	let timerHandle = null;
 	let testEndsAt = 0;
 	let gooseRaidInterval = null;
 	let gooseAnimationFrame = null;
 	let queuedGeese = [];
+	const DIGITS = '0123456789';
+	const SYMBOLS = '!@#$%^&*()-_=+[]{};:,.?/\\|';
 
-	const mappedCount = $derived(Object.keys(physicalToVirtual).length);
-	const currentTarget = $derived(mapOrder[mapIndex] ?? '');
 	const typedCount = $derived(typedEntries.length);
 	const correctCount = $derived(typedEntries.filter((entry) => entry.correct).length);
 	const wrongCount = $derived(typedEntries.length - correctCount);
 	const accuracy = $derived(typedEntries.length ? (correctCount / typedEntries.length) * 100 : 0);
 	const rawWpm = $derived((typedEntries.length / 5) * (60 / TEST_SECONDS));
 	const wpm = $derived((correctCount / 5) * (60 / TEST_SECONDS));
-	const virtualToPhysical = $derived.by(() => {
-		const reverse = {};
-		for (const [physical, virtual] of Object.entries(physicalToVirtual)) {
-			reverse[virtual] = physical;
-		}
-		return reverse;
-	});
-	const displayPrompt = $derived(encodeForDisplay(canonicalPrompt, virtualToPhysical));
+	const displayPrompt = $derived(canonicalPrompt);
 	const lineStarts = $derived(buildLineStarts(displayPrompt, PREVIEW_ROW_CHARS));
 	const activeLineIndex = $derived.by(() => {
 		let index = 0;
@@ -95,11 +66,8 @@
 		}
 		return rows;
 	});
-	const mapProgress = $derived((mappedCount / ALPHABET.length) * 100);
-	const mappingStep = $derived(Math.min(mapIndex + 1, ALPHABET.length));
 	const timeProgress = $derived((timeLeft / TEST_SECONDS) * 100);
 	const isSmallScreen = $derived(viewportWidth > 0 && viewportWidth <= 760);
-	const modeLabel = $derived(MODE_LABELS[mode] ?? 'Unknown');
 	const activeSkullNames = $derived.by(() =>
 		SKULLS.filter((skull) => selectedSkulls.includes(skull.id)).map((skull) => skull.name)
 	);
@@ -108,96 +76,55 @@
 		return selectedSkulls.includes(id);
 	}
 
+	function randomFrom(charset) {
+		return charset[Math.floor(Math.random() * charset.length)];
+	}
+
+	function applySkullMixToWord(word) {
+		let mixed = '';
+		for (const char of word) {
+			if (!/[a-z]/i.test(char)) {
+				mixed += char;
+				continue;
+			}
+			if (hasSkull('with_numbers') && Math.random() < 0.14) {
+				mixed += randomFrom(DIGITS);
+				continue;
+			}
+			if (hasSkull('with_symbols') && Math.random() < 0.12) {
+				mixed += randomFrom(SYMBOLS);
+				continue;
+			}
+			if (hasSkull('with_capitals') && Math.random() < 0.35) {
+				mixed += char.toUpperCase();
+				continue;
+			}
+			mixed += char.toLowerCase();
+		}
+		return mixed;
+	}
+
+	function buildPromptWithSkulls(wordCount = 220) {
+		return generatePrompt(wordCount)
+			.split(' ')
+			.map((word) => applySkullMixToWord(word))
+			.join(' ');
+	}
+
 	function resetRound() {
 		timeLeft = TEST_SECONDS;
 		testStarted = false;
 		typedEntries = [];
-		canonicalPrompt = generatePrompt();
+		canonicalPrompt = buildPromptWithSkulls();
 	}
 
-	function startMapping() {
-		mode = 'mapping';
+	function startRun() {
 		stopTimer();
-		stopGooseRaids();
-		phase = 'mapping';
-		layoutSource = 'custom';
-		mapOrder = randomize(ALPHABET);
-		mapIndex = 0;
-		mappingHint = 'Press the key where the shown letter lives on your real keyboard.';
-		physicalToVirtual = {};
-		typedEntries = [];
-		timeLeft = TEST_SECONDS;
-		testStarted = false;
-		canonicalPrompt = '';
-		testHint = '';
-		challengeHint = '';
-		shareStatus = '';
-	}
-
-	function startModeLayout(selectedMode) {
-		mode = selectedMode;
-		stopTimer();
-		stopGooseRaids();
-		phase = 'ready';
-		layoutSource = 'mode';
-		mapOrder = [];
-		mapIndex = 0;
-		if (selectedMode === 'normal') {
-			physicalToVirtual = createIdentityMapping();
-			mappingHint = 'Normal layout loaded (standard keyboard).';
-		} else if (selectedMode === 'caesarly_ambitions') {
-			physicalToVirtual = createCaesarShiftMapping(3);
-			mappingHint = 'Caesar layout loaded (+3 shift on every key).';
-		} else if (selectedMode === 'random') {
-			physicalToVirtual = createRandomMapping();
-			mappingHint = 'Random layout generated.';
-		} else {
-			physicalToVirtual = createIdentityMapping();
-			mappingHint = 'Normal layout loaded (standard keyboard).';
-		}
-		testHint = '';
-		challengeHint = '';
-		shareStatus = '';
-		resetRound();
-	}
-
-	function shuffleMapping() {
-		if (mappedCount !== ALPHABET.length) return;
-
-		if (layoutSource === 'mode') {
-			if (mode === 'normal') {
-				physicalToVirtual = createIdentityMapping();
-				mappingHint = 'Normal layout restored (no shuffle).';
-			} else if (mode === 'caesarly_ambitions') {
-				physicalToVirtual = createCaesarShiftMapping(3);
-				mappingHint = 'Caesar layout restored (+3 shift).';
-			} else if (mode === 'random') {
-				physicalToVirtual = createRandomMapping();
-				mappingHint = 'Random layout regenerated.';
-			}
-			resetRound();
-			return;
-		}
-
-		const keys = Object.keys(physicalToVirtual);
-		const mappedLetters = randomize(Object.values(physicalToVirtual));
-		const nextMap = {};
-		for (let i = 0; i < keys.length; i += 1) {
-			nextMap[keys[i]] = mappedLetters[i];
-		}
-		physicalToVirtual = nextMap;
-		mappingHint = 'Mapping shuffled. The target text has been remapped too.';
-		resetRound();
-	}
-
-	function beginTest() {
-		if (phase !== 'ready') return;
 		stopGooseRaids();
 		phase = 'testing';
-		mappingHint = '';
+		testHint = 'Press any key to start. Backspace works.';
+		challengeHint = '';
 		shareStatus = '';
-		testHint =
-			'Press any mapped letter key to start. Backspace works, unsupported keys are ignored.';
 		resetRound();
 	}
 
@@ -209,15 +136,16 @@
 	}
 
 	function startOver() {
-		startMapping();
+		startRun();
 	}
 
 	function playAgain() {
 		stopTimer();
 		stopGooseRaids();
-		phase = 'ready';
+		phase = 'testing';
 		resetRound();
-		testHint = '';
+		testHint = 'Press any key to start. Backspace works.';
+		challengeHint = '';
 		shareStatus = '';
 	}
 
@@ -225,13 +153,9 @@
 		stopTimer();
 		stopGooseRaids();
 		phase = 'intro';
-		mapOrder = [];
-		mapIndex = 0;
-		mappingHint = '';
 		testHint = '';
 		challengeHint = '';
 		shareStatus = '';
-		physicalToVirtual = {};
 	}
 
 	function toggleSkull(id) {
@@ -252,8 +176,6 @@
 
 	function buildShareUrl() {
 		const url = new URL(SHARE_BASE_URL);
-		url.searchParams.set('layout', layoutCodeFromMapping(physicalToVirtual));
-		url.searchParams.set('mode', mode);
 		if (selectedSkulls.length) {
 			url.searchParams.set('skulls', selectedSkulls.join(','));
 		}
@@ -267,7 +189,6 @@
 		return [
 			'Monkeytype: Memory Keyboard Challenge',
 			`I scored ${wpm.toFixed(1)} WPM at ${accuracy.toFixed(1)}% accuracy.`,
-			`Mode: ${modeLabel}`,
 			`Skulls: ${skullSummary}`,
 			'Beat it kiddo:',
 			url
@@ -275,7 +196,6 @@
 	}
 
 	async function shareResult() {
-		if (mappedCount !== ALPHABET.length) return;
 		const url = buildShareUrl();
 		const shareText = buildShareText(url);
 
@@ -299,7 +219,7 @@
 
 	function pushTypedChar(char) {
 		if (typedEntries.length + 60 > canonicalPrompt.length) {
-			canonicalPrompt = `${canonicalPrompt} ${generatePrompt(120)}`;
+			canonicalPrompt = `${canonicalPrompt} ${buildPromptWithSkulls(120)}`;
 		}
 
 		const expected = canonicalPrompt[typedEntries.length] ?? '';
@@ -320,7 +240,9 @@
 			wordStart += 1;
 		}
 
-		const replacement = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+		const replacement = applySkullMixToWord(
+			WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]
+		);
 		if (wordStart >= canonicalPrompt.length) {
 			canonicalPrompt = `${canonicalPrompt}${canonicalPrompt.endsWith(' ') ? '' : ' '}${replacement}`;
 			return;
@@ -334,33 +256,16 @@
 		canonicalPrompt = `${canonicalPrompt.slice(0, wordStart)}${replacement}${canonicalPrompt.slice(wordEnd)}`;
 	}
 
-	function handleMappingKey(physicalKey) {
-		if (!currentTarget) return;
-		if (physicalToVirtual[physicalKey]) {
-			mappingHint = `"${physicalKey.toUpperCase()}" is already mapped. Pick a different key.`;
-			return;
-		}
-
-		physicalToVirtual[physicalKey] = currentTarget;
-		mapIndex += 1;
-
-		if (mapIndex >= ALPHABET.length) {
-			phase = 'ready';
-			mappingHint = 'Mapping complete. You can quick-shuffle or start the 30-second run.';
-			resetRound();
-		}
-	}
-
-	function handleTypingKey(event, key) {
+	function handleTypingKey(key) {
 		if (timeLeft <= 0) return;
 
-		if (!testStarted && key !== 'backspace') {
+		if (!testStarted && key !== 'Backspace') {
 			testStarted = true;
 			testHint = '';
 			startTimer();
 		}
 
-		if (key === 'backspace') {
+		if (key === 'Backspace') {
 			if (hasSkull('no_backspace')) {
 				testHint = 'No Backspace skull is active.';
 				return;
@@ -373,7 +278,7 @@
 
 		if (key === ' ') {
 			const correct = pushTypedChar(' ');
-			if (hasSkull('word_roulette')) {
+			if (hasSkull('word_roulette') && Math.random() < 1 / 3) {
 				rerollUpcomingWord();
 			}
 			if (!correct && hasSkull('fucking_geese')) {
@@ -382,14 +287,7 @@
 			return;
 		}
 
-		const mapped = physicalToVirtual[key];
-		if (!mapped) {
-			event.preventDefault();
-			testHint = `Key "${key.toUpperCase()}" has no mapped letter in this mode.`;
-			return;
-		}
-
-		const correct = pushTypedChar(mapped);
+		const correct = pushTypedChar(key);
 		if (!correct && hasSkull('fucking_geese')) {
 			spawnGooseRaid(1);
 		}
@@ -571,33 +469,21 @@
 	function handleKeydown(event) {
 		if (event.altKey || event.ctrlKey || event.metaKey) return;
 
-		const key = event.key.toLowerCase();
-		const isLetter = key.length === 1 && key >= 'a' && key <= 'z';
-		const typingKey = isLetter || key === 'backspace' || key === ' ';
+		const key = event.key;
+		const typingKey = key.length === 1 || key === 'Backspace';
 		if (!typingKey) return;
 
-		if (key === ' ' || key === 'backspace') {
+		if (key === ' ' || key === 'Backspace') {
 			event.preventDefault();
 		}
 
-		if (phase === 'mapping') {
-			if (isLetter) {
-				handleMappingKey(key);
-			}
-			return;
-		}
-
 		if (phase === 'testing') {
-			handleTypingKey(event, key);
+			handleTypingKey(key);
 		}
 	}
 
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
-		const modeParam = params.get('mode');
-		if (modeParam && MODES.includes(modeParam)) {
-			mode = modeParam;
-		}
 		const skullParam = params.get('skulls');
 		if (skullParam) {
 			const requestedSkulls = skullParam
@@ -606,18 +492,6 @@
 				.filter((value) => SKULLS.some((skull) => skull.id === value));
 			selectedSkulls = Array.from(new Set(requestedSkulls));
 		}
-
-		const layout = params.get('layout');
-		if (!isValidLayoutCode(layout)) return;
-
-		physicalToVirtual = mappingFromCode(layout);
-		phase = 'ready';
-		layoutSource = 'custom';
-		mapOrder = [];
-		mapIndex = 0;
-		mappingHint = 'Shared layout loaded from URL. Start the 30-second test when ready.';
-		testHint = '';
-		resetRound();
 
 		const sharedWpm = params.get('wpm');
 		const sharedAcc = params.get('acc');
@@ -652,7 +526,7 @@
 	<section class="panel">
 		{#if isSmallScreen}
 			<p class="mobile-note">
-				Small-screen mode is active. A hardware keyboard gives the best blind-typing experience.
+				Small-screen view is active. A hardware keyboard gives the best blind-typing experience.
 			</p>
 		{/if}
 
@@ -675,92 +549,25 @@
 					{selectedSkulls.length === SKULLS.length ? 'Disable All Skulls' : 'All Skulls On'}
 				</button>
 			</div>
-			<p>Pick how you want this run to begin.</p>
-			<div class="start-grid">
-				<div class="start-card">
-					<h3>Mapping</h3>
-					<p>Map each letter manually from memory, then type on your custom layout.</p>
-					<button class="cta" onclick={startMapping}>Start</button>
-				</div>
-				<div class="start-card">
-					<h3>Normal</h3>
-					<p>Start with the default keyboard mapping (A to A, B to B, and so on).</p>
-					<button class="ghost" onclick={() => startModeLayout('normal')}>Start</button>
-				</div>
-				<div class="start-card">
-					<h3>Caesarly Ambitions</h3>
-					<p>Apply a Caesar +3 keyboard remap (A to D, B to E, C to F...).</p>
-					<button class="ghost" onclick={() => startModeLayout('caesarly_ambitions')}>
-						Start
-					</button>
-				</div>
-				<div class="start-card">
-					<h3>Random</h3>
-					<p>Generate a fully shuffled layout instantly and jump straight into a run.</p>
-					<button class="ghost" onclick={() => startModeLayout('random')}>Start</button>
-				</div>
-			</div>
-		{/if}
-
-		{#if phase === 'mapping' || phase === 'ready'}
-			<div class="status-row">
-				<p>
-					Mapped <strong>{mappedCount}</strong>/26
-				</p>
-				<p class="mode-badge">Mode: {modeLabel}</p>
-			</div>
-
-			{#if phase === 'mapping'}
-				<div class="mapping-callout" role="status" aria-live="polite">
-					<p class="mapping-step">Step {mappingStep} of 26</p>
-					<p class="mapping-title">Press the real key for:</p>
-					<p class="mapping-target-key">{currentTarget ? currentTarget.toUpperCase() : '✓'}</p>
-					<p class="mapping-subtitle">
-						Use your own keyboard memory. If this shows <strong>B</strong>, press your physical
-						<strong>B</strong> key.
-					</p>
-				</div>
-			{/if}
-
-			<div class="progress" aria-hidden="true">
-				<div class="fill map" style={`width: ${mapProgress}%`}></div>
-			</div>
-
-			{#if mappingHint}
-				<p class="hint">{mappingHint}</p>
-			{/if}
+			<p>Start typing.</p>
 			{#if challengeHint}
 				<p class="controls">{challengeHint}</p>
 			{/if}
-			{#if phase === 'mapping'}
-				<p class="mapping-legend">
-					Keyboard preview: <strong>left letter</strong> is your physical key,
-					<strong>right letter</strong> is what it maps to.
-				</p>
-			{/if}
-
-			<div class="keyboard-wrap">
-				<KeyboardMap rows={KEYBOARD_ROWS} mapping={physicalToVirtual} />
+			<div class="actions">
+				<button class="cta" onclick={startRun}>Start</button>
 			</div>
-
-			{#if phase === 'ready'}
-				<div class="actions">
-					<button class="ghost" onclick={shuffleMapping}>Quick Shuffle</button>
-					<button class="cta" onclick={beginTest}>Start 30s Test</button>
-				</div>
-			{/if}
 		{/if}
 
 		{#if phase === 'testing'}
 			<div class="test-head">
 				<p class="clock">{timeLeft}s</p>
-				<p>Type using your remapped layout.</p>
+				<p>Type with your normal keyboard layout.</p>
 			</div>
 			<div class="progress" aria-hidden="true">
 				<div class="fill timer" style={`width: ${timeProgress}%`}></div>
 			</div>
 			{#if !testStarted}
-				<p class="hint">Press any mapped key to start the timer.</p>
+				<p class="hint">Press any key to start the timer.</p>
 			{/if}
 			{#if testHint}
 				<p class="controls">{testHint}</p>
@@ -812,12 +619,6 @@
 				{/if}
 			</div>
 
-			<div class="test-keyboard-wrap" aria-label="virtual keyboard">
-				<div class="test-keyboard">
-					<KeyboardMap rows={KEYBOARD_ROWS} mapping={physicalToVirtual} keycapClass="test-keycap" />
-				</div>
-			</div>
-
 			<div class="mini-stats">
 				<span>WPM: {wpm.toFixed(1)}</span>
 				<span>Accuracy: {accuracy.toFixed(1)}%</span>
@@ -854,7 +655,7 @@
 
 			<div class="actions">
 				<button class="ghost" onclick={playAgain}>Play Again</button>
-				<button class="cta" onclick={startOver}>Remap Keyboard</button>
+				<button class="cta" onclick={startOver}>New Run</button>
 				<button class="ghost" onclick={shareResult}>Share</button>
 			</div>
 			{#if shareStatus}
@@ -880,6 +681,8 @@
 		max-width: 1024px;
 		margin: 0 auto;
 		padding: 2rem 1rem 3rem;
+		position: relative;
+		z-index: 1;
 	}
 
 	.hero {
@@ -911,10 +714,6 @@
 		margin-top: 0;
 	}
 
-	h3 {
-		margin: 0 0 0.35rem;
-	}
-
 	.hero p {
 		max-width: 72ch;
 	}
@@ -936,25 +735,6 @@
 		border: 1px solid #f0c88e;
 		font-size: 0.86rem;
 		color: #6f4824;
-	}
-
-	.start-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.8rem;
-	}
-
-	.start-card {
-		background: #fff;
-		border: 1px solid #f1d2a7;
-		border-radius: 12px;
-		padding: 0.8rem;
-		display: grid;
-		gap: 0.55rem;
-	}
-
-	.start-card p {
-		margin: 0;
 	}
 
 	.skull-config {
@@ -1034,73 +814,6 @@
 		font-size: 0.82rem;
 	}
 
-	.status-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.mode-badge {
-		margin: 0;
-		font-size: 0.84rem;
-		padding: 0.22rem 0.5rem;
-		border-radius: 999px;
-		border: 1px solid #f0c88e;
-		background: #fff3e0;
-		color: #6f4824;
-	}
-
-	.mapping-callout {
-		margin: 0.45rem 0 0.55rem;
-		padding: 0.8rem 0.9rem;
-		border-radius: 14px;
-		border: 1px solid #f0b872;
-		background: linear-gradient(150deg, #fff6ea, #ffe7c7);
-	}
-
-	.mapping-step {
-		margin: 0;
-		font-size: 0.76rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #7c4a12;
-	}
-
-	.mapping-title {
-		margin: 0.25rem 0 0.2rem;
-		font-size: 0.95rem;
-		color: #5d3810;
-	}
-
-	.mapping-target-key {
-		margin: 0;
-		font-size: clamp(2rem, 5vw, 2.7rem);
-		line-height: 1;
-		font-weight: 700;
-		letter-spacing: 0.03em;
-		color: #fff;
-		background: #1a2433;
-		border-radius: 12px;
-		width: fit-content;
-		min-width: 2.6rem;
-		padding: 0.3rem 0.6rem 0.35rem;
-		text-align: center;
-	}
-
-	.mapping-subtitle {
-		margin: 0.45rem 0 0;
-		font-size: 0.88rem;
-		color: #6f4824;
-	}
-
-	.mapping-legend {
-		margin: 0.15rem 0 0.25rem;
-		font-size: 0.85rem;
-		color: #6f4824;
-	}
-
 	.hint {
 		margin-top: 0.3rem;
 		color: #784200;
@@ -1124,17 +837,8 @@
 		transition: width 180ms linear;
 	}
 
-	.fill.map {
-		background: linear-gradient(90deg, #f2a22e, #ffd27c);
-	}
-
 	.fill.timer {
 		background: linear-gradient(90deg, #5fd48f, #f1b94a);
-	}
-
-	.keyboard-wrap {
-		overflow-x: auto;
-		padding-bottom: 0.25rem;
 	}
 
 	.actions {
@@ -1221,17 +925,6 @@
 		margin: 0.2rem 0 0.55rem;
 	}
 
-	.test-keyboard-wrap {
-		overflow-x: auto;
-		padding: 0.25rem 0 0.2rem;
-	}
-
-	.test-keyboard {
-		display: grid;
-		gap: 0.42rem;
-		min-width: max-content;
-	}
-
 	.goose-flyer {
 		position: absolute;
 		z-index: 70;
@@ -1304,10 +997,6 @@
 
 		.actions button {
 			width: 100%;
-		}
-
-		.start-grid {
-			grid-template-columns: 1fr;
 		}
 
 		.skull-grid {

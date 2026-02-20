@@ -6,13 +6,6 @@ export const PREVIEW_ROW_CHARS = 48;
 export const GOOSE_PASS_DURATION_MS = 4800;
 export const GOOSE_SPAWN_INTERVAL_MS = 5000;
 export const GOOSE_MAX_ACTIVE = 40;
-export const MODES = ['mapping', 'normal', 'caesarly_ambitions', 'random'];
-export const MODE_LABELS = {
-	mapping: 'Mapping',
-	normal: 'Normal',
-	caesarly_ambitions: 'Caesarly Ambitions',
-	random: 'Random'
-};
 export const SKULLS = [
 	{
 		id: 'no_backspace',
@@ -22,7 +15,22 @@ export const SKULLS = [
 	{
 		id: 'word_roulette',
 		name: 'Word Roulette',
-		description: 'Every typed space rerolls the next target word.'
+		description: 'Typed spaces have a 1 in 3 chance to reroll the next target word.'
+	},
+	{
+		id: 'with_numbers',
+		name: 'With Numbers',
+		description: 'Add random numbers into the prompt.'
+	},
+	{
+		id: 'with_symbols',
+		name: 'With Symbols',
+		description: 'Add random symbols into the prompt.'
+	},
+	{
+		id: 'with_capitals',
+		name: 'With Capitals',
+		description: 'Add random capital letters into the prompt.'
 	},
 	{
 		id: 'fucking_geese',
