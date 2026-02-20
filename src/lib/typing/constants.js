@@ -33,6 +33,21 @@ export const SKULLS = [
 		description: 'Add random capital letters into the prompt.'
 	},
 	{
+		id: 'dyslectic',
+		name: 'Dyslectic',
+		description: 'Flip random letters vertically.'
+	},
+	{
+		id: 'dyslectic_simulator',
+		name: 'Dyslectic Simulator',
+		description: 'Animated text shadow distortion makes words harder to read.'
+	},
+	{
+		id: 'party_parrot_mode',
+		name: 'Party Parrot Mode',
+		description: 'Rainbow mode, dancing parrots, and letters cycling colors every second.'
+	},
+	{
 		id: 'fucking_geese',
 		name: 'Fucking Geese',
 		description: 'A goose or 2 keeps flying over your text.'

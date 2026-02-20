@@ -24,6 +24,8 @@
 	let challengeHint = $state('');
 	let shareStatus = $state('');
 	let activeGeese = $state([]);
+	let dyslecticFlipMask = $state([]);
+	let partyParrots = $state([]);
 	let timerHandle = null;
 	let testEndsAt = 0;
 	let gooseRaidInterval = null;
@@ -111,11 +113,28 @@
 			.join(' ');
 	}
 
+	function buildDyslecticMask(text) {
+		return Array.from(text, (char) => /[a-z]/i.test(char) && Math.random() < 0.24);
+	}
+
+	function buildPartyParrots(count = 8) {
+		return Array.from({ length: count }, (_, index) => ({
+			id: `party-parrot-${index}-${Math.floor(Math.random() * 100000)}`,
+			x: 6 + Math.random() * 88,
+			y: 14 + Math.random() * 72,
+			size: 1.7 + Math.random() * 1.2,
+			delay: Math.random() * 1.2,
+			duration: 0.9 + Math.random() * 1.5
+		}));
+	}
+
 	function resetRound() {
 		timeLeft = TEST_SECONDS;
 		testStarted = false;
 		typedEntries = [];
 		canonicalPrompt = buildPromptWithSkulls();
+		dyslecticFlipMask = buildDyslecticMask(canonicalPrompt);
+		partyParrots = hasSkull('party_parrot_mode') ? buildPartyParrots() : [];
 	}
 
 	function startRun() {
@@ -219,7 +238,9 @@
 
 	function pushTypedChar(char) {
 		if (typedEntries.length + 60 > canonicalPrompt.length) {
-			canonicalPrompt = `${canonicalPrompt} ${buildPromptWithSkulls(120)}`;
+			const extension = ` ${buildPromptWithSkulls(120)}`;
+			canonicalPrompt = `${canonicalPrompt}${extension}`;
+			dyslecticFlipMask = [...dyslecticFlipMask, ...buildDyslecticMask(extension)];
 		}
 
 		const expected = canonicalPrompt[typedEntries.length] ?? '';
@@ -512,7 +533,7 @@
 	<title>Typing</title>
 </svelte:head>
 
-<main class="app-shell">
+<main class={['app-shell', hasSkull('party_parrot_mode') && phase === 'testing' && 'party-shell']}>
 	<header class="hero">
 		<div class="hero-top">
 			<p class="eyebrow">Blind Layout Mode</p>
@@ -586,7 +607,14 @@
 				</div>
 			{/if}
 
-			<div class="prompt" aria-label="typing prompt">
+			<div
+				class={[
+					'prompt',
+					hasSkull('dyslectic_simulator') && 'dyslectic-sim',
+					hasSkull('party_parrot_mode') && 'party-prompt'
+				]}
+				aria-label="typing prompt"
+			>
 				{#each promptRows as row (row.id)}
 					<div class={['prompt-row', row.active && 'active']}>
 						{#each row.text.split('') as char, offset (row.start + offset)}
@@ -594,16 +622,31 @@
 							<span
 								class={[
 									'char',
+									hasSkull('dyslectic') && dyslecticFlipMask[i] && 'flip-vertical',
 									i < typedCount && typedEntries[i]?.correct && 'ok',
 									i < typedCount && !typedEntries[i]?.correct && 'bad',
-									i === typedCount && 'current'
+									i === typedCount && 'current',
+									hasSkull('party_parrot_mode') && 'party-char'
 								]}
+								style={`--party-color-delay: -${(i % 13) * 0.08}s;`}
 							>
 								{char}
 							</span>
 						{/each}
 					</div>
 				{/each}
+
+				{#if hasSkull('party_parrot_mode')}
+					{#each partyParrots as parrot (parrot.id)}
+						<span
+							class="party-parrot"
+							style={`left: ${parrot.x}%; top: ${parrot.y}%; --party-parrot-size: ${parrot.size}rem; --party-parrot-delay: ${parrot.delay}s; --party-parrot-duration: ${parrot.duration}s;`}
+							aria-hidden="true"
+						>
+							🦜
+						</span>
+					{/each}
+				{/if}
 
 				{#if hasSkull('fucking_geese')}
 					{#each activeGeese as goose (goose.id)}
@@ -683,6 +726,26 @@
 		padding: 2rem 1rem 3rem;
 		position: relative;
 		z-index: 1;
+	}
+
+	.app-shell.party-shell::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		z-index: -1;
+		background: linear-gradient(
+			120deg,
+			#ff2b2b,
+			#ff8f1f,
+			#ffe71f,
+			#39ff7a,
+			#36d6ff,
+			#7f7dff,
+			#ff52d9,
+			#ff2b2b
+		);
+		background-size: 420% 420%;
+		animation: rainbow-shift 8s linear infinite;
 	}
 
 	.hero {
@@ -887,6 +950,38 @@
 		overflow: hidden;
 	}
 
+	.prompt.dyslectic-sim {
+		animation: dyslectic-warp 1900ms ease-in-out infinite;
+	}
+
+	.prompt.dyslectic-sim .prompt-row {
+		animation: dyslectic-row-jitter 1300ms steps(4, end) infinite;
+	}
+
+	.prompt.dyslectic-sim .prompt-row:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+
+	.prompt.dyslectic-sim .prompt-row:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+
+	.prompt.dyslectic-sim .char {
+		text-shadow:
+			-0.05em 0.03em rgba(255, 80, 80, 0.28),
+			0.06em -0.02em rgba(90, 185, 255, 0.34),
+			0 0 0.03em rgba(255, 255, 255, 0.22);
+		animation: dyslectic-shadow-drift 950ms steps(2, end) infinite;
+	}
+
+	.prompt.party-prompt {
+		border-color: rgba(255, 255, 255, 0.7);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.15),
+			0 0 0 1px rgba(255, 255, 255, 0.25),
+			0 0 28px -12px rgba(255, 255, 255, 0.45);
+	}
+
 	.prompt-row {
 		display: block;
 		color: #58616c;
@@ -908,6 +1003,29 @@
 		background: transparent;
 		color: #f1f4f8;
 		border-bottom: 2px solid #f2be6a;
+	}
+
+	.char.flip-vertical {
+		display: inline-block;
+		transform: scaleY(-1);
+		transform-origin: center;
+	}
+
+	.prompt.party-prompt .char.party-char {
+		animation: party-char-color 1s steps(1, end) infinite;
+		animation-delay: var(--party-color-delay, 0s);
+	}
+
+	.party-parrot {
+		position: absolute;
+		z-index: 36;
+		transform: translate(-50%, -50%);
+		font-size: var(--party-parrot-size, 2rem);
+		line-height: 1;
+		pointer-events: none;
+		filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.45));
+		animation: party-parrot-vibe var(--party-parrot-duration, 1.3s) ease-in-out infinite;
+		animation-delay: var(--party-parrot-delay, 0s);
 	}
 
 	.mini-stats {
@@ -972,6 +1090,107 @@
 	.value-skulls {
 		font-size: 0.98rem;
 		line-height: 1.35;
+	}
+
+	@keyframes rainbow-shift {
+		0% {
+			background-position: 0% 50%;
+		}
+		100% {
+			background-position: 100% 50%;
+		}
+	}
+
+	@keyframes dyslectic-warp {
+		0%,
+		100% {
+			filter: saturate(1) contrast(1);
+			transform: perspective(700px) rotateX(0deg) rotateY(0deg);
+		}
+		50% {
+			filter: saturate(1.08) contrast(1.06);
+			transform: perspective(700px) rotateX(1.2deg) rotateY(-1.3deg);
+		}
+	}
+
+	@keyframes dyslectic-row-jitter {
+		0%,
+		100% {
+			transform: translate(0, 0);
+		}
+		20% {
+			transform: translate(0.04em, -0.01em);
+		}
+		40% {
+			transform: translate(-0.05em, 0.02em);
+		}
+		60% {
+			transform: translate(0.03em, 0.01em);
+		}
+		80% {
+			transform: translate(-0.02em, -0.03em);
+		}
+	}
+
+	@keyframes dyslectic-shadow-drift {
+		0% {
+			text-shadow:
+				-0.05em 0.03em rgba(255, 80, 80, 0.3),
+				0.06em -0.02em rgba(90, 185, 255, 0.32),
+				0 0 0.03em rgba(255, 255, 255, 0.2);
+		}
+		50% {
+			text-shadow:
+				0.07em 0.01em rgba(255, 80, 80, 0.35),
+				-0.05em -0.03em rgba(90, 185, 255, 0.34),
+				0 0 0.04em rgba(255, 255, 255, 0.24);
+		}
+		100% {
+			text-shadow:
+				-0.04em -0.02em rgba(255, 80, 80, 0.28),
+				0.05em 0.03em rgba(90, 185, 255, 0.3),
+				0 0 0.03em rgba(255, 255, 255, 0.2);
+		}
+	}
+
+	@keyframes party-char-color {
+		0% {
+			color: #ff5f6d;
+		}
+		16% {
+			color: #ffb347;
+		}
+		33% {
+			color: #fff95b;
+		}
+		50% {
+			color: #78ff7b;
+		}
+		66% {
+			color: #5fd0ff;
+		}
+		83% {
+			color: #bd8cff;
+		}
+		100% {
+			color: #ff7bf0;
+		}
+	}
+
+	@keyframes party-parrot-vibe {
+		0%,
+		100% {
+			transform: translate(-50%, -50%) rotate(-6deg) scale(0.97);
+		}
+		25% {
+			transform: translate(-50%, -54%) rotate(7deg) scale(1.06);
+		}
+		50% {
+			transform: translate(-50%, -48%) rotate(-8deg) scale(1);
+		}
+		75% {
+			transform: translate(-50%, -53%) rotate(8deg) scale(1.05);
+		}
 	}
 
 	@media (max-width: 700px) {
