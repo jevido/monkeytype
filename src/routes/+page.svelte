@@ -241,7 +241,7 @@
 	function buildShareText(url) {
 		const skullSummary = activeSkullNames.length ? activeSkullNames.join(', ') : 'None';
 		return [
-			'Monkeytype: Memory Keyboard Challenge',
+			'Monkeytype: Challenge',
 			`I scored ${wpm.toFixed(1)} WPM at ${accuracy.toFixed(1)}% accuracy.`,
 			`Skulls on: ${skullSummary}`,
 			url
@@ -595,7 +595,7 @@
 			<p class="eyebrow">Blind Layout Mode</p>
 			<button class="ghost dashboard-btn" onclick={goToDashboard}>Back to Dashboard</button>
 		</div>
-		<h1>Monkeytype: Memory Keyboard</h1>
+		<h1>Monkeytype</h1>
 		<p>So you think you can type fast huh?</p>
 		<p>Are you ready to put your money where your mouth is kiddo?</p>
 	</header>
