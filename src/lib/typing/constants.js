@@ -39,7 +39,7 @@ export const SKULLS = [
 	},
 	{
 		id: 'dyslectic_simulator',
-		name: 'Dyslectic Simulator',
+		name: 'Real dyslexia',
 		description: 'Animated text shadow distortion makes words harder to read.'
 	},
 	{

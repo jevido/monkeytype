@@ -73,6 +73,8 @@
 	const activeSkullNames = $derived.by(() =>
 		SKULLS.filter((skull) => selectedSkulls.includes(skull.id)).map((skull) => skull.name)
 	);
+	const shareUrl = $derived(buildShareUrl());
+	const shareText = $derived(buildShareText(shareUrl));
 
 	function hasSkull(id) {
 		return selectedSkulls.includes(id);
@@ -117,15 +119,48 @@
 		return Array.from(text, (char) => /[a-z]/i.test(char) && Math.random() < 0.24);
 	}
 
+	function isParrotInPromptZone(x, y, zone) {
+		if (!zone) return false;
+		return x >= zone.left && x <= zone.right && y >= zone.top && y <= zone.bottom;
+	}
+
 	function buildPartyParrots(count = 8) {
-		return Array.from({ length: count }, (_, index) => ({
-			id: `party-parrot-${index}-${Math.floor(Math.random() * 100000)}`,
-			x: 6 + Math.random() * 88,
-			y: 14 + Math.random() * 72,
-			size: 1.7 + Math.random() * 1.2,
-			delay: Math.random() * 1.2,
-			duration: 0.9 + Math.random() * 1.5
-		}));
+		const hasViewport =
+			typeof window !== 'undefined' && window.innerWidth > 0 && window.innerHeight > 0;
+		const promptRect = hasViewport
+			? document.querySelector('.prompt')?.getBoundingClientRect()
+			: null;
+		const promptZone = promptRect
+			? {
+					left: (promptRect.left / window.innerWidth) * 100 - 5,
+					right: (promptRect.right / window.innerWidth) * 100 + 5,
+					top: (promptRect.top / window.innerHeight) * 100 - 5,
+					bottom: (promptRect.bottom / window.innerHeight) * 100 + 5
+				}
+			: null;
+
+		const parrots = [];
+		for (let index = 0; index < count; index += 1) {
+			let x = 5 + Math.random() * 90;
+			let y = 8 + Math.random() * 84;
+			let attempts = 0;
+			while (attempts < 60 && isParrotInPromptZone(x, y, promptZone)) {
+				x = 5 + Math.random() * 90;
+				y = 8 + Math.random() * 84;
+				attempts += 1;
+			}
+
+			parrots.push({
+				id: `party-parrot-${index}-${Math.floor(Math.random() * 100000)}`,
+				x,
+				y,
+				size: 1.7 + Math.random() * 1.2,
+				delay: Math.random() * 1.2,
+				duration: 0.9 + Math.random() * 1.5
+			});
+		}
+
+		return parrots;
 	}
 
 	function resetRound() {
@@ -141,7 +176,7 @@
 		stopTimer();
 		stopGooseRaids();
 		phase = 'testing';
-		testHint = 'Press any key to start. Backspace works.';
+		testHint = '';
 		challengeHint = '';
 		shareStatus = '';
 		resetRound();
@@ -163,7 +198,7 @@
 		stopGooseRaids();
 		phase = 'testing';
 		resetRound();
-		testHint = 'Press any key to start. Backspace works.';
+		testHint = '';
 		challengeHint = '';
 		shareStatus = '';
 	}
@@ -208,31 +243,45 @@
 		return [
 			'Monkeytype: Memory Keyboard Challenge',
 			`I scored ${wpm.toFixed(1)} WPM at ${accuracy.toFixed(1)}% accuracy.`,
-			`Skulls: ${skullSummary}`,
-			'Beat it kiddo:',
+			`Skulls on: ${skullSummary}`,
 			url
 		].join('\n');
 	}
 
 	async function shareResult() {
-		const url = buildShareUrl();
-		const shareText = buildShareText(url);
-
 		try {
 			if (navigator.share) {
 				await navigator.share({
 					title: 'Monkeytype Blind Layout Challenge',
 					text: shareText,
-					url
+					url: shareUrl
 				});
 				shareStatus = 'Challenge link shared.';
 				return;
 			}
 
 			await navigator.clipboard.writeText(shareText);
-			shareStatus = 'Challenge link copied to clipboard.';
+			shareStatus = 'Share text copied to clipboard.';
 		} catch {
 			shareStatus = 'Share failed. Please try again.';
+		}
+	}
+
+	async function copyShareText() {
+		try {
+			await navigator.clipboard.writeText(shareText);
+			shareStatus = 'Share text copied to clipboard.';
+		} catch {
+			shareStatus = 'Copy failed. Please try again.';
+		}
+	}
+
+	async function copyShareLink() {
+		try {
+			await navigator.clipboard.writeText(shareUrl);
+			shareStatus = 'Challenge link copied to clipboard.';
+		} catch {
+			shareStatus = 'Copy failed. Please try again.';
 		}
 	}
 
@@ -298,6 +347,13 @@
 		}
 
 		if (key === ' ') {
+			// Ignore accidental extra spaces so one mistake does not shift all following input.
+			const expected = canonicalPrompt[typedEntries.length] ?? '';
+			if (expected !== ' ') {
+				testHint = 'No space needed yet.';
+				return;
+			}
+
 			const correct = pushTypedChar(' ');
 			if (hasSkull('word_roulette') && Math.random() < 1 / 3) {
 				rerollUpcomingWord();
@@ -636,18 +692,6 @@
 					</div>
 				{/each}
 
-				{#if hasSkull('party_parrot_mode')}
-					{#each partyParrots as parrot (parrot.id)}
-						<span
-							class="party-parrot"
-							style={`left: ${parrot.x}%; top: ${parrot.y}%; --party-parrot-size: ${parrot.size}rem; --party-parrot-delay: ${parrot.delay}s; --party-parrot-duration: ${parrot.duration}s;`}
-							aria-hidden="true"
-						>
-							🦜
-						</span>
-					{/each}
-				{/if}
-
 				{#if hasSkull('fucking_geese')}
 					{#each activeGeese as goose (goose.id)}
 						<button
@@ -661,6 +705,18 @@
 					{/each}
 				{/if}
 			</div>
+
+			{#if hasSkull('party_parrot_mode')}
+				{#each partyParrots as parrot (parrot.id)}
+					<span
+						class="party-parrot"
+						style={`left: ${parrot.x}vw; top: ${parrot.y}vh; --party-parrot-size: ${parrot.size}rem; --party-parrot-delay: ${parrot.delay}s; --party-parrot-duration: ${parrot.duration}s;`}
+						aria-hidden="true"
+					>
+						🦜
+					</span>
+				{/each}
+			{/if}
 
 			<div class="mini-stats">
 				<span>WPM: {wpm.toFixed(1)}</span>
@@ -699,8 +755,30 @@
 			<div class="actions">
 				<button class="ghost" onclick={playAgain}>Play Again</button>
 				<button class="cta" onclick={startOver}>New Run</button>
-				<button class="ghost" onclick={shareResult}>Share</button>
 			</div>
+
+			<section class="share-block" aria-label="Share your stats">
+				<p class="label">Share Card</p>
+				<div class="share-card">
+					<p class="share-brand">Monkeytype Challenge</p>
+					<p class="share-score">{wpm.toFixed(1)} WPM</p>
+					<div class="share-metrics">
+						<p>Accuracy: {accuracy.toFixed(1)}%</p>
+						<p>Raw WPM: {rawWpm.toFixed(1)}</p>
+						<p>Correct / Wrong: {correctCount} / {wrongCount}</p>
+					</div>
+					<p class="share-skulls">
+						Skulls: {activeSkullNames.length ? activeSkullNames.join(', ') : 'None'}
+					</p>
+					<p class="share-link">{shareUrl}</p>
+				</div>
+				<p class="share-note">Take a screenshot of this card and crop to the border.</p>
+				<div class="actions share-actions">
+					<button class="ghost" onclick={shareResult}>Share</button>
+					<button class="ghost" onclick={copyShareText}>Copy Text</button>
+					<button class="ghost" onclick={copyShareLink}>Copy Link</button>
+				</div>
+			</section>
 			{#if shareStatus}
 				<p class="controls">{shareStatus}</p>
 			{/if}
@@ -1017,8 +1095,8 @@
 	}
 
 	.party-parrot {
-		position: absolute;
-		z-index: 36;
+		position: fixed;
+		z-index: 20;
 		transform: translate(-50%, -50%);
 		font-size: var(--party-parrot-size, 2rem);
 		line-height: 1;
@@ -1090,6 +1168,80 @@
 	.value-skulls {
 		font-size: 0.98rem;
 		line-height: 1.35;
+	}
+
+	.share-block {
+		margin-top: 1rem;
+	}
+
+	.share-card {
+		margin-top: 0.4rem;
+		border-radius: 16px;
+		border: 2px solid #f0b96f;
+		padding: 1rem;
+		background:
+			radial-gradient(650px 250px at 12% -12%, #fff6df 0%, transparent 55%),
+			linear-gradient(165deg, #fffef8 0%, #fff1d7 100%);
+		box-shadow: 0 10px 24px -16px rgba(125, 62, 0, 0.45);
+		aspect-ratio: 1 / 1;
+		max-width: 520px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.share-brand {
+		margin: 0;
+		font-size: 0.85rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: #8b5b1f;
+	}
+
+	.share-score {
+		margin: 0.55rem 0 0;
+		font-size: clamp(2rem, 4.8vw, 2.7rem);
+		font-weight: 800;
+		line-height: 1.05;
+		color: #1a2433;
+	}
+
+	.share-metrics {
+		margin-top: 0.6rem;
+		display: grid;
+		gap: 0.25rem;
+		font-weight: 600;
+		color: #37485f;
+	}
+
+	.share-metrics p {
+		margin: 0;
+	}
+
+	.share-skulls {
+		margin: 0.9rem 0 0;
+		font-size: 0.9rem;
+		line-height: 1.35;
+		color: #5a3616;
+	}
+
+	.share-link {
+		margin: auto 0 0;
+		font-size: 0.82rem;
+		line-height: 1.35;
+		color: #63411f;
+		word-break: break-word;
+		border-top: 1px dashed #e3be87;
+		padding-top: 0.6rem;
+	}
+
+	.share-note {
+		margin: 0.55rem 0 0;
+		font-size: 0.86rem;
+		color: #734414;
+	}
+
+	.share-actions {
+		margin-top: 0.75rem;
 	}
 
 	@keyframes rainbow-shift {
@@ -1220,6 +1372,10 @@
 
 		.skull-grid {
 			grid-template-columns: 1fr;
+		}
+
+		.share-card {
+			max-width: 100%;
 		}
 	}
 </style>
